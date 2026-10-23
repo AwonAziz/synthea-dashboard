@@ -177,7 +177,10 @@ export default function App() {
       </div>
 
       <main style={{ padding: 24, maxWidth: 1200, margin: '0 auto' }}>
-        {error && <div style={{ background: '#fef2f2', border: '1px solid #fecaca', color: '#991b1b', padding: 12, borderRadius: 8, marginBottom: 16 }}>{error}</div>}
+        {error && <div style={{ background: '#fef2f2', border: '1px solid #fecaca', color: '#991b1b', padding: 12, borderRadius: 8, marginBottom: 16 }}>
+          <strong>API Error:</strong> {error}<br/>
+          <span style={{ fontSize: 12, opacity: 0.8 }}>The dashboard requires the Neural Hub backend. Set VITE_SYNTHEA_API_BASE_URL to your backend URL, or run the backend locally on port 8787.</span>
+        </div>}
 
         {/* Overview */}
         {view === 'overview' && (
