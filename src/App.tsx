@@ -27,6 +27,8 @@ interface Summary {
   statusCounts: Record<string, number>;
   scenarioCounts: Record<string, number>;
   manifest: { appendNumbersToPersonNames?: boolean; generatedPatients?: number; importedProfiles?: number };
+  checkCounts?: Record<string, number>;
+  recentChecks?: any[];
 }
 
 interface EligibilityResult {
@@ -53,7 +55,7 @@ const STATUS_COLORS: Record<string, string> = {
 };
 
 export default function App() {
-  const [view, setView] = useState<'overview' | 'explorer' | 'detail' | 'test'>('overview');
+  const [view, setView] = useState<'overview' | 'explorer' | 'detail' | 'test' | 'checks'>('overview');
   const [summary, setSummary] = useState<Summary | null>(null);
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [totalProfiles, setTotalProfiles] = useState(0);
@@ -72,6 +74,8 @@ export default function App() {
   const [testResult, setTestResult] = useState<EligibilityResult | null>(null);
   const [testLoading, setTestLoading] = useState(false);
   const [showJson, setShowJson] = useState(false);
+  const [checks, setChecks] = useState<any[]>([]);
+  const [checksLoading, setChecksLoading] = useState(false);
 
   const fetchSummary = useCallback(async () => {
     setLoading(true);
@@ -109,10 +113,25 @@ export default function App() {
     }
   }, [page, pageSize, search, payerFilter, statusFilter, scenarioFilter]);
 
+  const fetchChecks = useCallback(async () => {
+    setChecksLoading(true);
+    try {
+      const res = await fetch(API_BASE + '/api/dev/synthetic-insurance/checks', { credentials: 'include' });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const data = await res.json();
+      setChecks(data.checks || []);
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setChecksLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     if (view === 'overview') fetchSummary();
     if (view === 'explorer') fetchProfiles();
-  }, [view, fetchSummary, fetchProfiles]);
+    if (view === 'checks') fetchChecks();
+  }, [view, fetchSummary, fetchProfiles, fetchChecks]);
 
   const runTest = async () => {
     setTestLoading(true);
@@ -155,7 +174,7 @@ export default function App() {
           <p style={{ margin: '4px 0 0', fontSize: 13, opacity: 0.8 }}>Explore synthetic insurance profiles, inspect benefits, and test eligibility responses.</p>
         </div>
         <nav style={{ display: 'flex', gap: 8 }}>
-          {(['overview', 'explorer', 'test'] as const).map(v => (
+          {(['overview', 'explorer', 'checks', 'test'] as const).map(v => (
             <button key={v} onClick={() => setView(v)} style={{
               background: view === v ? '#14b8a6' : 'transparent',
               color: '#fff',
@@ -197,6 +216,7 @@ export default function App() {
                     { label: 'Inactive', value: summary.statusCounts.inactive || 0 },
                     { label: 'Pending', value: summary.statusCounts.pending || 0 },
                     { label: 'Scenarios', value: Object.keys(summary.scenarioCounts).length },
+                    { label: 'Eligibility Checks', value: Object.values(summary.checkCounts || {}).reduce((a: number, b: any) => a + (Number(b) || 0), 0) },
                   ].map(m => (
                     <div key={m.label} style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 10, padding: 16 }}>
                       <div style={{ fontSize: 12, color: '#64748b', fontWeight: 500 }}>{m.label}</div>
@@ -224,6 +244,18 @@ export default function App() {
                       </div>
                     ))}
                   </div>
+                </div>
+
+                <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 10, padding: 16, marginTop: 16 }}>
+                  <h3 style={{ fontSize: 14, fontWeight: 600, marginBottom: 12 }}>Recent Eligibility Checks</h3>
+                  {(summary.recentChecks || []).length === 0 && <p style={{ fontSize: 13, color: '#64748b' }}>No checks recorded yet.</p>}
+                  {(summary.recentChecks || []).map((c: any) => (
+                    <div key={c.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: '1px solid #f1f5f9', fontSize: 13 }}>
+                      <span style={{ fontFamily: 'monospace', fontSize: 11 }}>{c.id}</span>
+                      <span style={{ color: STATUS_COLORS[c.status] || '#6b7280', fontWeight: 500 }}>{c.status}</span>
+                      <span style={{ color: '#64748b', fontSize: 11 }}>{new Date(c.created_at).toLocaleString()}</span>
+                    </div>
+                  ))}
                 </div>
 
                 <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 10, padding: 16, marginTop: 16 }}>
@@ -355,6 +387,41 @@ export default function App() {
                 <button onClick={() => copyProfile(selectedProfile)} style={{ padding: '8px 16px', border: '1px solid #cbd5e1', borderRadius: 8, cursor: 'pointer', background: '#fff', fontSize: 13 }}>Copy Test Details</button>
                 <button onClick={() => testProfile(selectedProfile)} style={{ padding: '8px 16px', border: '1px solid #14b8a6', borderRadius: 8, cursor: 'pointer', background: '#f0fdfa', color: '#0f766e', fontSize: 13 }}>Test Eligibility</button>
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* Checks */}
+        {view === 'checks' && (
+          <div>
+            <h2 style={{ fontSize: 18, fontWeight: 600, marginBottom: 16 }}>Recent Eligibility Checks</h2>
+            {checksLoading && <p>Loading...</p>}
+            {!checksLoading && checks.length === 0 && <p style={{ color: '#64748b' }}>No checks recorded yet.</p>}
+            <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 10, overflow: 'hidden' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                <thead>
+                  <tr style={{ background: '#f1f5f9' }}>
+                    {['ID', 'Payer', 'Status', 'Copay', 'Deductible', 'Check ID', 'Time'].map(h => (
+                      <th key={h} style={{ padding: '10px 12px', textAlign: 'left', fontWeight: 600, fontSize: 12, color: '#475569', borderBottom: '1px solid #e2e8f0' }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {checks.map((c: any) => (
+                    <tr key={c.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                      <td style={{ padding: '8px 12px', fontFamily: 'monospace', fontSize: 11 }}>{c.id}</td>
+                      <td style={{ padding: '8px 12px' }}>{c.payer || '—'}</td>
+                      <td style={{ padding: '8px 12px' }}>
+                        <span style={{ color: STATUS_COLORS[c.status] || '#6b7280', fontWeight: 500, fontSize: 12 }}>{c.status}</span>
+                      </td>
+                      <td style={{ padding: '8px 12px' }}>{c.copay || '—'}</td>
+                      <td style={{ padding: '8px 12px' }}>{c.deductible || '—'}</td>
+                      <td style={{ padding: '8px 12px', fontFamily: 'monospace', fontSize: 10 }}>{c.check_id || '—'}</td>
+                      <td style={{ padding: '8px 12px', fontSize: 11 }}>{new Date(c.created_at).toLocaleString()}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           </div>
         )}
